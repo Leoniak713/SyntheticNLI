@@ -1,7 +1,7 @@
 import random
 import math
 
-from datasets import Dataset, DatasetDict
+from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 
 from dropbox_utils import from_dropbox
