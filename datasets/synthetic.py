@@ -1,7 +1,7 @@
 import random
 import math
 
-from dropbox import from_dropbox
+from dropbox_utils import from_dropbox
 
 from datasets import Dataset, DatasetDict
 
