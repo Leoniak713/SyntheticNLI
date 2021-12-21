@@ -1,0 +1,6 @@
+datasets==1.16.1
+transformers[sentencepiece]==4.14.1
+owlready2
+numpy==1.19.5
+pandas==1.1.5
+dropbox==11.25.0
