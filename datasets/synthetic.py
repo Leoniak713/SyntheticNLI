@@ -1,4 +1,9 @@
+import random
+import math
 
+from dropbox import from_dropbox
+
+from datasets import Dataset, DatasetDict
 
 class SynthDataset(Dataset):
     def __init__(self, df, tokenizer, negatives_rate=0.5, hypothesis_subsampling_rate=0.5):
@@ -38,8 +43,8 @@ class SynthDataset(Dataset):
         return self.tokenizer(premise, hypothesis, truncation=True)
     
 
-def get_synth_datasets(data_path, test_size=0.2, val_size=0.2):
-    df = from_dropbox(data_path, 'synth_data.csv')
+def get_synth_datasets(data_path, dropbox_token, tokenizer, test_size=0.2, val_size=0.2):
+    df = from_dropbox(data_path, 'synth_data.csv', dropbox_token)
 
     train_df, test_df = train_test_split(df, test_size=test_size)
     train_df, val_df = train_test_split(train_df, test_size=val_size)

@@ -1,3 +1,5 @@
+import numpy as np
+
 class Metric:
     def __init__(self, metric_name):
         self.metric = load_metric(metric_name)
@@ -6,5 +8,3 @@ class Metric:
         logits, labels = eval_preds
         predictions = np.argmax(logits, axis=-1)
         return self.metric.compute(predictions=predictions, references=labels)
-
-        
