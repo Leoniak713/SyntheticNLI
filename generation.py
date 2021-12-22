@@ -2,7 +2,6 @@ import owlready2 as owl
 
 import random
 import numpy as np
-import pandas as pd
 from collections import defaultdict
 
 from abc import ABC, abstractmethod
@@ -289,15 +288,27 @@ class PropertyBasedGenerator(WorldGenerator):
         return parsed_initial_triplets, inferred_triplets
 
 
-def verbalise_dataset(worlds):
-    return pd.DataFrame([(verbalise_world(initial_world), verbalise_world(inferred_world)) for initial_world, inferred_world in worlds], columns=['premise', 'hypothesis'])
+def convert_to_json(worlds):
+    return [
+        {
+            'premise': convert_world(initial_world), 
+            'hypothesis': convert_world(inferred_world)
+        }
+        for initial_world, inferred_world in worlds
+    ]
 
-def verbalise_world(world):
-    return [verbalise_triplet(triplet) for triplet in world]
+def convert_world(world):
+    return [convert_triplet(triplet) for triplet in world]
 
-def verbalise_triplet(triplet):
-    joined = ' '.join(triplet)
-    #denumerised = ''.join([_char for _char in joined if not _char.isdigit()])
-    splitted_camelcase = re.sub('([A-Z][a-z]+)', r' \1', re.sub('([A-Z]+)', r' \1', joined)).split()
+def convert_triplet(triplet):
+    subject, _property, _object = triplet
+    return {
+        'subject': split_camelcase(subject),
+        'property': split_camelcase(_property),
+        'object': split_camelcase(_object),
+    }
+
+def split_camelcase(_string):
+    splitted_camelcase = re.sub('([A-Z][a-z]+)', r' \1', re.sub('([A-Z]+)', r' \1', _string)).split()
     rejoined = ' '.join(splitted_camelcase)
     return rejoined
