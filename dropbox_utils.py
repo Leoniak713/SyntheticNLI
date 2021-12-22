@@ -5,12 +5,9 @@ import dropbox
 class DropboxClient:
     def __init__(self, token):
         self.dbx = dropbox.Dropbox(token)
-        self.upload_filename = 'upload.json'
-        self.download_filename = 'download.json'
 
-    def to_dropbox(self, data, dropbox_path):
-        to_json(data, self.upload_filename)
-        db_bytes = bytes(self.upload_filename, 'utf8')
+    def to_dropbox(self, data_json, dropbox_path):
+        db_bytes = bytes(json.dumps(data_json), 'utf8')
         self.dbx.files_upload(
             f=db_bytes,
             path=dropbox_path,
@@ -18,15 +15,5 @@ class DropboxClient:
         )
 
     def from_dropbox(self, dropbox_path):
-        with open(self.download_filename, "wb") as f:
-            metadata, res = self.dbx.files_download(path=dropbox_path)
-            f.write(res.content)
-        return read_json(self.download_filename)
-
-def to_json(data, filepath):
-    with open(filepath, 'wt') as json_file:
-        json.dump(data, json_file)
-
-def read_json(filepath):
-    with open(filepath, 'rt') as json_file:
-        return json.load(json_file)
+        _, res = self.dbx.files_download(path=dropbox_path)
+        return json.loads(res.content)
