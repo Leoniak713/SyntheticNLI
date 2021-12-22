@@ -2,12 +2,12 @@ import pandas as pd
 import dropbox
 
 class DropboxClient:
-    def __init__(token):
+    def __init__(self, token):
         self.dbx = dropbox.Dropbox(token)
         self.upload_filename = 'upload.json'
         self.download_filename = 'download.json'
 
-    def to_dropbox(data, dropbox_path):
+    def to_dropbox(self, data, dropbox_path):
         to_json(data, self.upload_filename)
         db_bytes = bytes(self.upload_filename, 'utf8')
         self.dbx.files_upload(
@@ -16,7 +16,7 @@ class DropboxClient:
             mode=dropbox.files.WriteMode.overwrite
         )
 
-    def from_dropbox(dropbox_path):
+    def from_dropbox(self, dropbox_path):
         with open(self.download_filename, "wb") as f:
             metadata, res = self.dbx.files_download(path=dropbox_path)
             f.write(res.content)
