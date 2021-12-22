@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from torch.utils.data import Dataset
 from sklearn.model_selection import train_test_split
 
-from dropbox_utils import from_dropbox
+from dropbox_utils import DropboxClient
 
 
 class SynthDataset(ABC, Dataset):
@@ -99,14 +99,28 @@ class SynthMLMDataset(SynthDataset):
 
 
 def get_synth_datasets(
-    data_path, dropbox_token, tokenizer, test_size=0.2, val_size=0.2
+    data_path,
+    dataset_type,
+    dropbox_token,
+    tokenizer,
+    test_size=0.2,
+    val_size=0.2,
+    **dataset_kwargs,
 ):
-    df = from_dropbox(data_path, "synth_data.csv", dropbox_token)
+    dbx = DropboxClient(dropbox_token)
+    data = dbx.from_dropbox(data_path)
 
-    train_df, test_df = train_test_split(df, test_size=test_size)
-    train_df, val_df = train_test_split(train_df, test_size=val_size)
+    train_data, test_data = train_test_split(data, test_size=test_size)
+    train_data, val_data = train_test_split(train_data, test_size=val_size)
 
-    train_synth = SynthDataset(train_df, tokenizer)
-    val_synth = SynthDataset(val_df, tokenizer)
-    test_synth = SynthDataset(test_df, tokenizer)
+    if dataset_type == "cls":
+        dataset_class = SynthClassificationDataset
+    elif dataset_type == "mlm":
+        dataset_class = SynthMLMDataset
+    else:
+        raise ValueError("Invalid dataset type")
+
+    train_synth = dataset_class(train_data, tokenizer, **dataset_kwargs)
+    val_synth = dataset_class(val_data, tokenizer, **dataset_kwargs)
+    test_synth = dataset_class(test_data, tokenizer, **dataset_kwargs)
     return train_synth, val_synth, test_synth
