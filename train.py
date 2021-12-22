@@ -1,6 +1,7 @@
 import numpy as np
 from datasets import load_metric
 
+
 class Metric:
     def __init__(self, metric_name):
         self.metric = load_metric(metric_name)
