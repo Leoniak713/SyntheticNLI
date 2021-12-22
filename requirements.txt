@@ -6,3 +6,4 @@ pandas==1.1.5
 dropbox==11.25.0
 cython==0.29.26
 torch==1.10.0
+scikit-learn==0.24.2
