@@ -32,8 +32,8 @@ class SynthDataset(ABC, Dataset):
     def verbalise_triplet(triplet):
         return f"{triplet['object']} {triplet['property']} {triplet['subject']}"
 
-    def _tokenize(self, premise, hypothesis, padding=False):
-        return self.tokenizer(premise, hypothesis, padding=padding, truncation=True)
+    def _tokenize(self, premise, hypothesis, **kwargs):
+        return self.tokenizer(premise, hypothesis, truncation=True, **kwargs)
 
 
 class SynthClassificationDataset(SynthDataset):
@@ -89,12 +89,14 @@ class SynthMLMDataset(SynthDataset):
         datapoint = self._tokenize(
             self._verbalise_triplets(premise),
             self._verbalise_triplets(masked_hypothesis),
-            padding=True,
+            max_length=512,
+            padding="max_length",
         )
         datapoint["label"] = self._tokenize(
             self._verbalise_triplets(premise),
             self._verbalise_triplets(hypothesis),
-            padding=True,
+            max_length=512,
+            padding="max_length",
         )["input_ids"]
         return datapoint
 
