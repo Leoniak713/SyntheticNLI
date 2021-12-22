@@ -54,8 +54,6 @@ class SynthClassificationDataset(SynthDataset):
             )
             num_samples = num_hypothesis - random.randint(1, max_rejections)
             subsampled_hypothesis = random.sample(hypothesis, num_samples)
-            print(self._verbalise_triplets(premise))
-            print(self._verbalise_triplets(subsampled_hypothesis))
             datapoint = self._tokenize(
                 self._verbalise_triplets(premise),
                 self._verbalise_triplets(subsampled_hypothesis),
