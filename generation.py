@@ -99,7 +99,7 @@ class WorldGenerator(ABC):
 
     @staticmethod
     def _get_ontology():
-        return owl.get_ontology("http://kb.openrobots.org/").load()
+        return owl.World().get_ontology("http://kb.openrobots.org/").load()
 
     def _reset_ontology(self):
         self.ontology = self._get_ontology()
