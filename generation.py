@@ -100,7 +100,9 @@ class WorldGenerator(ABC):
     @staticmethod
     def _get_ontology():
         return owl.get_ontology("http://kb.openrobots.org/").load()
-        # return owl.World().get_ontology("http://kb.openrobots.org/").load()
+
+    def _reset_ontology(self):
+        self.ontology = self._get_ontology()
 
     def _get_property_domains_and_ranges(self):
         filled_properties = list()
@@ -292,6 +294,7 @@ class PropertyBasedGenerator(WorldGenerator):
         return triplets
 
     def generate_world(self, num_properties):
+        self._reset_ontology()
         initial_triplets = [self._generate_property() for _ in range(num_properties)]
         post_inference_triplets = self.run_inference()
         parsed_initial_triplets = parse_world(initial_triplets)
