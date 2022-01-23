@@ -89,6 +89,7 @@ def get_subclasses(entity):
 
 class WorldGenerator(ABC):
     def __init__(self):
+        self.world = owl.World()
         self.ontology = self._get_ontology()
         self.classes = self._get_classes()
         self.initial_individuals = self._get_individuals()
@@ -97,9 +98,8 @@ class WorldGenerator(ABC):
         self.domain_property_map, self.property_range_map = self._get_property_maps()
         self.property_domain_range_map = self.get_property_domain_range_map()
 
-    @staticmethod
-    def _get_ontology():
-        return owl.World().get_ontology("http://kb.openrobots.org/").load()
+    def _get_ontology(self):
+        return self.world.get_ontology("http://kb.openrobots.org/").load()
 
     def _reset_ontology(self):
         self.ontology = self._get_ontology()
