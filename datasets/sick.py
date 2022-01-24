@@ -1,3 +1,5 @@
+from datasets import load_dataset
+
 def sick_tokenize_function(example, tokenizer):
     return tokenizer(example["sentence_A"], example["sentence_B"], truncation=True)
 
