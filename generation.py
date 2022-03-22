@@ -47,12 +47,27 @@ class Triplet:
         for object_entity in self.get_object_entities():
             self.delete_entity(object_entity, initial_individuals)
 
+    @staticmethod
+    def get_entity_class_name(entity):
+        return str(type(entity)).split('.')[-1]
+
+    def get_entity_names(self, entity):
+        return entity.name, self.get_entity_class_name(entity)
+
     def parsed(self):
         if self.property_is_functional():
-            return {(self.subject.name, self._property.name, self._object.name)}
+            return {(
+                self.get_entity_names(self.subject), 
+                self.get_entity_names(self._property), 
+                self.get_entity_names(self._object),
+                )}
         else:
             return {
-                (self.subject.name, self._property.name, _object.name)
+                (
+                    self.get_entity_names(self.subject), 
+                    self.get_entity_names(self._property), 
+                    self.get_entity_names(_object),
+                )
                 for _object in self._object
             }
 
@@ -321,11 +336,14 @@ def convert_world(world):
 
 
 def convert_triplet(triplet):
-    subject, _property, _object = triplet
+    subject_names, property_names, object_names = triplet
+    subject_name, subject_class_name = subject_names
+    property_name, _ = property_names
+    object_name, object_class_name = object_names
     return {
-        "subject": split_camelcase(subject),
-        "property": split_camelcase(_property),
-        "object": split_camelcase(_object),
+        "subject": (subject_name, split_camelcase(subject_class_name)),
+        "property": split_camelcase(property_name),
+        "object": (object_name, split_camelcase(object_class_name)),
     }
 
 
