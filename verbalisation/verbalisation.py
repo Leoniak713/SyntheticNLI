@@ -15,7 +15,7 @@ class VerbalisationTriplet:
         self.pos_tagger = pos_tagger
         self.tokenizer = tokenizer
         self.set_clean_triplet_elements(triplet)
-        self.verblike_pos_tags = ('VERB', 'AUX')
+        self.verblike_pos_tags = {'VERB', 'AUX'}
     
     def __getitem__(self, arg):
         return getattr(self, arg)
@@ -31,11 +31,6 @@ class VerbalisationTriplet:
     def get_masked_statement(self, negate=False, prefix_entities=True):
         #masked sentence in form [SOS, subject prefix, subject, predicate prefix, predicate, object prefix, object, EOS]
         masked_elements = list()
-        token_ranges = {
-            'subject': {},
-            'property': {},
-            'object': {},
-            }
         masked_elements.append('<s>')
         if prefix_entities:
             masked_elements.append(' <mask>')
@@ -75,12 +70,16 @@ class VerbalisationTriplet:
     def prefix_mask(element: str) -> str:
         return f"<mask> {element}"
     
-    def mask_individuals(self, sentence):
-        num_subject_tokens = self.tokenizer.encode(sentence[2], return_tensors="pt", add_special_tokens=False).shape[1]
-        num_object_tokens = self.tokenizer.encode(sentence[6], return_tensors="pt", add_special_tokens=False).shape[1]
+    def mask_individuals(self, sentence, use_single_mask=True):
         masked_sentence = sentence.copy()
-        masked_sentence[2] = ' '.join(['<mask>']*num_subject_tokens)
-        masked_sentence[6] = ' '.join(['<mask>']*num_object_tokens)
+        if use_single_mask:
+            masked_sentence[2] = '<mask>'
+            masked_sentence[6] = '<mask>'
+        else:
+            num_subject_tokens = self.tokenizer.encode(sentence[2], return_tensors="pt", add_special_tokens=False).shape[1]
+            num_object_tokens = self.tokenizer.encode(sentence[6], return_tensors="pt", add_special_tokens=False).shape[1]
+            masked_sentence[2] = ' '.join(['<mask>']*num_subject_tokens)
+            masked_sentence[6] = ' '.join(['<mask>']*num_object_tokens)
         return masked_sentence
 
     def mask_predicate(self, sentence):
@@ -122,46 +121,3 @@ class TripletSet:
         sentences_clipped = [sentence.split('.')[0] + '.' for sentence in sentences]
         scores = np.exp(generated_ids['sequences_scores']).tolist()
         return sentences, scores
-    
-    
-    
-def replace_triplet_entities(triplet, replacement_dict):
-    new_triplet = dict()
-    new_triplet['subject'] = replacement_dict[triplet['subject'][0]]
-    new_triplet['property'] = clean_entity(triplet['property'])
-    new_triplet['object'] = replacement_dict[triplet['object'][0]]
-    return new_triplet
-
-def find_entity_phrases(sentence, subject, predicate, _object):
-    cleaned_sentence = clean_entity(sentence.replace('<s>', ''))
-    
-    predicate_split_sentence_pieces = cleaned_sentence.split(predicate)
-    if len(predicate_split_sentence_pieces) != 2:
-        return None
-
-    subject_split_sentence_pieces = predicate_split_sentence_pieces[0].split(subject)
-    object_split_sentence_pieces = predicate_split_sentence_pieces[1].split(_object)
-    if len(subject_split_sentence_pieces) != 2 or len(object_split_sentence_pieces) != 2:
-        return None
-
-    subject_prefix = subject_split_sentence_pieces[0]
-    predicate_prefix = subject_split_sentence_pieces[1]
-    object_prefix =object_split_sentence_pieces[0]
-
-    subject_phrase = f'{subject_prefix} {subject}'.strip()
-    predicate_phrase = f'{predicate_prefix} {predicate}'.strip()
-    object_phrase =f'{object_prefix} {_object}'.strip()
-
-    return subject_phrase, predicate_phrase, object_phrase
-    
-    
-    
-class PremiseSet(TripletSet):
-    def __init__(self, triplets):
-        super().__init__(triplets)
-        
-
-        
-class HypothesisSet(TripletSet):
-    def __init__(self, triplets):
-        super().__init__(triplets)

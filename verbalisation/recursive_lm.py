@@ -12,54 +12,69 @@ from SyntheticNLI.verbalisation.verbalisation import (
 
 class DummyConstraint:
     @staticmethod
-    def filter(verbalisation_states, complete_stages, beam_size):
+    def filter(verbalisation_states, beam_size, token_ranges):
         return verbalisation_states[:beam_size]
 
 class POSConstraint:
-    def __init__(self, tokenizer, pos_tagger, constraints_args):
+    def __init__(self, tokenizer, pos_tagger):
         self.tokenizer = tokenizer
         self.pos_tagger = pos_tagger
-        self.constraints_args = constraints_args
-        self.verblike_pos_tags = ('VERB', 'AUX')
+        self.verblike_pos_tags = {'VERB', 'AUX'}
+
+    #@staticmethod
+    def is_fully_filled(self, pos_tags):
+        for pos_tag in pos_tags:
+            if pos_tag['word'] == '[MASK]':
+                return False
+        return True
 
     def contains_verblike_tag(self, pos_tags):
-        for verblike_tag in self.verblike_pos_tags:
-            if verblike_tag in pos_tags:
+        for pos_tag in pos_tags:
+            if pos_tag['entity'] in self.verblike_pos_tags:
                 return True
         return False
 
-    def filter(self, verbalisation_states, complete_stages, beam_size):
+    def filter(self, verbalisation_states, beam_size, token_ranges):
         valid_states = list()
         for verbalisation_state in verbalisation_states:
-            sentence = self.tokenizer.decode(verbalisation_state['sentence_tokens'][0])
-            sentence = clean_entity(sentence.replace('<mask>', '').replace('<s>', ''))
-            entity_phrases = find_entity_phrases(
-                sentence,
-                self.constraints_args['triplet'].subject,
-                self.constraints_args['triplet'].property,
-                self.constraints_args['triplet'].object,
-            )
-            if entity_phrases is None:
-                continue
-            subject_phrase, property_phrase, object_phrase = entity_phrases
-            pos_tags = [pos_tag['entity'] for pos_tag in self.pos_tagger(sentence)]
-            subject_phrase_words_len = len([w for w in subject_phrase.split(' ') if w != ''])
-            property_phrase_words_len = len([w for w in property_phrase.split(' ') if w != ''])
-            object_phrase_words_len = len([w for w in object_phrase.split(' ') if w != ''])
-            subject_phrase_pos_tags = pos_tags[:subject_phrase_words_len]
-            property_phrase_pos_tags = pos_tags[subject_phrase_words_len:subject_phrase_words_len+property_phrase_words_len]
-            object_phrase_pos_tags = pos_tags[subject_phrase_words_len+property_phrase_words_len:]
+
+            verbalised_sentence_parts = list()
+            for token_range in token_ranges[1:-1]:
+                verbalisation_part_decoded = self.tokenizer.decode(verbalisation_state['sentence_tokens'][0][token_range[0]:token_range[1]])
+                verbalised_sentence_parts.append(verbalisation_part_decoded.replace('<mask>', '[MASK]'))
+            verbalised_sentence = ''.join(verbalised_sentence_parts)
+
+            subject_phrase_characters_start = 0
+            subject_phrase_characters_end = len(''.join(verbalised_sentence_parts[0:2]))
+            predicate_phrase_characters_start = len(''.join(verbalised_sentence_parts[0:2]))
+            predicate_phrase_characters_end = len(''.join(verbalised_sentence_parts[0:4]))
+            object_phrase_characters_start = len(''.join(verbalised_sentence_parts[0:4]))
+            object_phrase_characters_end = len(''.join(verbalised_sentence_parts[0:6]))
+            
+            subject_phrase_pos_tags = list()
+            predicate_phrase_pos_tags = list()
+            object_phrase_pos_tags = list()
+            for pos_tag in self.pos_tagger(verbalised_sentence):
+                if (pos_tag['start'] >= subject_phrase_characters_start) and (pos_tag['end'] <= subject_phrase_characters_end):
+                    subject_phrase_pos_tags.append(pos_tag)
+                if (pos_tag['start'] >= predicate_phrase_characters_start) and (pos_tag['end'] <= predicate_phrase_characters_end):
+                    predicate_phrase_pos_tags.append(pos_tag)
+                if (pos_tag['start'] >= object_phrase_characters_start) and (pos_tag['end'] <= object_phrase_characters_end):
+                    object_phrase_pos_tags.append(pos_tag)
+
             valid_verbalization = True
-            if (0 in complete_stages) and self.contains_verblike_tag(subject_phrase_pos_tags):
+            if self.is_fully_filled(subject_phrase_pos_tags) and self.contains_verblike_tag(subject_phrase_pos_tags):
                 valid_verbalization = False
-            if (1 in complete_stages) and (not self.contains_verblike_tag(property_phrase_pos_tags)):
+            if self.is_fully_filled(predicate_phrase_pos_tags) and not self.contains_verblike_tag(predicate_phrase_pos_tags):
                 valid_verbalization = False
-            if (2 in complete_stages) and self.contains_verblike_tag(object_phrase_pos_tags):
+            if self.is_fully_filled(object_phrase_pos_tags) and self.contains_verblike_tag(object_phrase_pos_tags):
                 valid_verbalization = False
             if valid_verbalization:
                 valid_states.append(verbalisation_state)
+
             if len(valid_states) >= beam_size:
                 break
+
         return valid_states
 
 
@@ -92,7 +107,6 @@ class RecursiveLM:
         positions = torch.where(tokens[0] == self.tokenizer.mask_token_id)[0].numpy()
         assert len(positions) == len(order)
         reordered_positions = positions[order].tolist()
-        stages = ([], order)
 
         initial_verbalisation_states = [
             {
@@ -103,9 +117,9 @@ class RecursiveLM:
         ]
         verbalisations = self.recusive_fill(
             initial_verbalisation_states, 
-            reordered_positions, 
-            stages,
+            reordered_positions,
             constraint,
+            token_ranges,
             )
         verbalised_sentences = list()
         filled_words = list()
@@ -119,7 +133,7 @@ class RecursiveLM:
 
 
 
-    def recusive_fill(self, verbalisation_states, positions_list, stages, constraint):
+    def recusive_fill(self, verbalisation_states, positions_list, constraint, token_ranges):
         if len(positions_list) == 0:
             return verbalisation_states
         else:
@@ -127,7 +141,6 @@ class RecursiveLM:
             for verbalisation_state in verbalisation_states:
                 model_logits = self.model(verbalisation_state['sentence_tokens'])['logits'][0][positions_list[0]]
                 probs = torch.nn.functional.softmax(model_logits, dim=0)
-                #top_k_tokens = torch.topk(model_logits, self.top_k, dim=0).indices.tolist()
                 sorted_tokens = torch.argsort(probs, descending=True)
                 for token in sorted_tokens:
                     modified_tokens = verbalisation_state['sentence_tokens'].detach().clone()
@@ -141,16 +154,11 @@ class RecursiveLM:
                         }
                     )
             sorted_states = sorted(modified_verbalisation_states, key=lambda x: np.mean(x['probabilities']), reverse=True)
-            complete_stages = stages[0] + [stages[1][0]]
-            upcoming_stages = stages[1][1:]
-            sorted_states = constraint.filter(sorted_states, complete_stages, self.beam_size)
-            print(complete_stages)
-            for s in sorted_states:
-                print(self.tokenizer.decode(s['sentence_tokens'][0]))
+            sorted_states = constraint.filter(sorted_states, self.beam_size, token_ranges)
             return self.recusive_fill(
                 sorted_states[:self.beam_size], 
-                positions_list[1:], 
-                (complete_stages, upcoming_stages), 
-                constraint
+                positions_list[1:],
+                constraint,
+                token_ranges,
             )
 
