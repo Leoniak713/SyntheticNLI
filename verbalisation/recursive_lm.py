@@ -3,13 +3,6 @@ import random
 import numpy as np
 import torch
 
-from SyntheticNLI.verbalisation.verbalisation import (
-    VerbalisationTriplet, 
-    replace_triplet_entities, 
-    find_entity_phrases,
-    clean_entity
-    )
-
 class DummyConstraint:
     @staticmethod
     def filter(verbalisation_states, beam_size, token_ranges):
@@ -77,6 +70,41 @@ class POSConstraint:
 
         return valid_states
 
+class DummyModifier:
+    def __init__(self, *args, **kwargs):
+        pass
+    
+    def modify_scores(self, score, *args, **kwargs):
+        return score
+
+class Modifier:
+    def __init__(self, model, tokenizer, domains, weight=0.5):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.weight = weight
+        self.modification_vectors = self._get_domain_scores(domains)
+        self.iterator_idx = 0
+        
+    @staticmethod
+    def _get_masked_domain_statement(domain_name):
+        normalized_domain_name = domain_name.lower()
+        return f'<s><mask> is a {normalized_domain_name}.</s>'
+
+    def _get_domain_scores(self, domains):
+        domain_scores = list()
+        for domian in domains:
+            masked_domain_statement = self._get_masked_domain_statement(domian)
+            masked_domain_statement_tokens = self.tokenizer.encode(masked_domain_statement, return_tensors="pt", add_special_tokens=False)
+            model_logits = self.model(masked_domain_statement_tokens)['logits'][0][1]
+            probs = torch.nn.functional.softmax(model_logits, dim=0)
+            domain_scores.append(probs)
+        return domain_scores      
+    
+    def modify_scores(self, score):
+        modification_vector = self.modification_vectors[self.iterator_idx]
+        modified_score = torch.pow(score, 1-self.weight)*torch.pow(modification_vector, self.weight)
+        self.iterator_idx += 1
+        return modified_score
 
 class RecursiveLM:
     def __init__(self, model, tokenizer, beam_size=20, order='random'):
@@ -99,8 +127,9 @@ class RecursiveLM:
             part_tokens = self.tokenizer.encode(sequence_part,
                                     return_tensors="pt",
                                     add_special_tokens=False)
-            tokens.extend(part_tokens)
             num_part_tokens = part_tokens.shape[1]
+            if num_part_tokens > 0:
+                tokens.extend(part_tokens)
             token_ranges.append((token_start_id, token_start_id + num_part_tokens))
             token_start_id += num_part_tokens
         tokens = torch.cat(tokens).reshape(1, -1)
