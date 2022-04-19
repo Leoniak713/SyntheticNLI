@@ -77,6 +77,9 @@ class DummyModifier:
     def modify_scores(self, score, *args, **kwargs):
         return score
 
+    def increase_iterator(self):
+        pass
+
 class Modifier:
     def __init__(self, model, tokenizer, domains, weight=0.5):
         self.model = model
@@ -98,12 +101,14 @@ class Modifier:
             model_logits = self.model(masked_domain_statement_tokens)['logits'][0][1]
             probs = torch.nn.functional.softmax(model_logits, dim=0)
             domain_scores.append(probs)
-        return domain_scores      
+        return domain_scores  
+
+    def increase_iterator(self):
+        self.iterator_idx += 1
     
     def modify_scores(self, score):
         modification_vector = self.modification_vectors[self.iterator_idx]
         modified_score = torch.pow(score, 1-self.weight)*torch.pow(modification_vector, self.weight)
-        self.iterator_idx += 1
         return modified_score
 
 class RecursiveLM:
@@ -118,8 +123,10 @@ class RecursiveLM:
             return DummyConstraint()
         return constraints
         
-    def fill_multiple_masks(self, sequence, order, constraint=None):
+    def fill_multiple_masks(self, sequence, order, constraint=None, modifier=None):
         constraint = self.get_constraint(constraint)
+        if modifier is None:
+            modifier = DummyModifier()
         tokens = list()
         token_ranges = list()
         token_start_id = 0
@@ -149,6 +156,7 @@ class RecursiveLM:
             reordered_positions,
             constraint,
             token_ranges,
+            modifier
             )
         verbalised_sentences = list()
         filled_words = list()
@@ -162,7 +170,7 @@ class RecursiveLM:
 
 
 
-    def recusive_fill(self, verbalisation_states, positions_list, constraint, token_ranges):
+    def recusive_fill(self, verbalisation_states, positions_list, constraint, token_ranges, modifier):
         if len(positions_list) == 0:
             return verbalisation_states
         else:
@@ -170,11 +178,12 @@ class RecursiveLM:
             for verbalisation_state in verbalisation_states:
                 model_logits = self.model(verbalisation_state['sentence_tokens'])['logits'][0][positions_list[0]]
                 probs = torch.nn.functional.softmax(model_logits, dim=0)
-                sorted_tokens = torch.argsort(probs, descending=True)
+                modified_probs = modifier.modify_scores(probs)
+                sorted_tokens = torch.argsort(modified_probs, descending=True)
                 for token in sorted_tokens:
                     modified_tokens = verbalisation_state['sentence_tokens'].detach().clone()
                     modified_tokens[0][positions_list[0]] = token
-                    fill_probability = probs[token].detach().numpy().item()
+                    fill_probability = modified_probs[token].detach().numpy().item()
                     modified_verbalisation_states.append(
                         {
                             'sentence_tokens': modified_tokens, 
@@ -184,10 +193,12 @@ class RecursiveLM:
                     )
             sorted_states = sorted(modified_verbalisation_states, key=lambda x: np.mean(x['probabilities']), reverse=True)
             sorted_states = constraint.filter(sorted_states, self.beam_size, token_ranges)
+            modifier.increase_iterator()
             return self.recusive_fill(
                 sorted_states[:self.beam_size], 
                 positions_list[1:],
                 constraint,
                 token_ranges,
+                modifier,
             )
 
