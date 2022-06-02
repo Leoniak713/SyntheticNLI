@@ -82,11 +82,6 @@ class HypothesisTriplet:
 
     def contains_verb(self, predicate):
         return self.verblike_pos_tags in {pos_tag['entity'] for pos_tag in self.pos_tagger(predicate)}
-
-    # @staticmethod
-    # def capitalize_first_phrase_letter(phrase):
-    #     prefix, clause = phrase
-    #     if prefix != '':
             
 
     def get_masked_statements_with_mapped_entities(self, verbalisations_variants):
