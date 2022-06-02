@@ -86,14 +86,6 @@ class Triplet:
         )
 
 
-def parse_world(triplets):
-    parsed_triplets = set()
-    for triplet in triplets:
-        for parsed_triplet in triplet.parsed():
-            parsed_triplets.add(parsed_triplet)
-    return parsed_triplets
-
-
 def get_subclasses(entity):
     recursive_subclasses = [entity]
     for subclass in entity.subclasses():
@@ -103,7 +95,8 @@ def get_subclasses(entity):
 
 
 class WorldGenerator(ABC):
-    def __init__(self):
+    def __init__(self, ontology_path: str):
+        self.ontology_path = ontology_path
         self.world = owl.World()
         self.ontology = self._get_ontology()
         self.classes = self._get_classes()
@@ -114,7 +107,7 @@ class WorldGenerator(ABC):
         self.property_domain_range_map = self.get_property_domain_range_map()
 
     def _get_ontology(self):
-        return self.world.get_ontology("http://kb.openrobots.org/").load()
+        return self.world.get_ontology(self.ontology_path).load()
 
     def _reset_ontology(self):
         self.ontology = self._get_ontology()
@@ -180,12 +173,25 @@ class WorldGenerator(ABC):
                     triplets.append(Triplet(_object, _property, subject))
         return triplets
 
+
+    def parse_world(self, triplets):
+        parsed_triplets = set()
+        for triplet in triplets:
+            if triplet._property in self.property_domain_range_map:
+                for parsed_triplet in triplet.parsed():
+                    parsed_triplets.add(parsed_triplet)
+        return parsed_triplets
+
     def run_inference(self):
         with self.ontology:
-            try:
-                owl.sync_reasoner_pellet(infer_property_values=True)
-            except:
-                return None
+            for triplet in self._get_triplets():
+                print((triplet.subject, triplet._property, triplet._object))
+            # owl.sync_reasoner_pellet(infer_property_values=True)
+            owl.sync_reasoner(infer_property_values=True, debug = False)
+            # try:
+            #     owl.sync_reasoner_pellet(infer_property_values=True)
+            # except:
+            #     return None
         inferred_triplets = self._get_triplets()
         return inferred_triplets
 
@@ -304,17 +310,15 @@ class PropertyBasedGenerator(WorldGenerator):
             modyfied_triplet = Triplet(subject, _property, _object)
             modyfied_triplet.add_object(_object)
             triplets.append(modyfied_triplet)
-            print(triplet)
-            print(modyfied_triplet)
         return triplets
 
     def generate_world(self, num_properties):
         self._reset_ontology()
         initial_triplets = [self._generate_property() for _ in range(num_properties)]
         post_inference_triplets = self.run_inference()
-        parsed_initial_triplets = parse_world(initial_triplets)
+        parsed_initial_triplets = self.parse_world(initial_triplets)
         inferred_triplets = (
-            parse_world(post_inference_triplets) - parsed_initial_triplets
+            self.parse_world(post_inference_triplets) - parsed_initial_triplets
         )
         for triplet in post_inference_triplets:
             triplet.delete(self.initial_individuals)
