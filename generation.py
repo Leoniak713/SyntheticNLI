@@ -86,25 +86,19 @@ class Triplet:
         )
 
 
-def get_subclasses(entity):
-    recursive_subclasses = [entity]
-    for subclass in entity.subclasses():
-        if subclass != entity:
-            recursive_subclasses.extend(get_subclasses(subclass))
-    return recursive_subclasses
-
-
 class WorldGenerator(ABC):
     def __init__(self, ontology_path: str):
         self.ontology_path = ontology_path
         self.world = owl.World()
         self.ontology = self._get_ontology()
         self.classes = self._get_classes()
-        self.initial_individuals = self._get_individuals()
         self.properties = self._get_properties()
+        self.initial_individuals = self._get_individuals()
         self.owl_triplets = self._get_triplets()
-        self.domain_property_map, self.property_range_map = self._get_property_maps()
-        self.property_domain_range_map = self.get_property_domain_range_map()
+        self.invalid_classes = self._get_invalid_classes()
+        self.property_domain_range_map, self.domain_property_map, self.range_property_map = self._get_property_maps()
+        self.valid_properties = self._get_valid_properties()
+        self.valid_classes = self._get_valid_classes()
 
     def _get_ontology(self):
         return self.world.get_ontology(self.ontology_path).load()
@@ -112,30 +106,23 @@ class WorldGenerator(ABC):
     def _reset_ontology(self):
         self.ontology = self._get_ontology()
 
+    def _get_invalid_classes(self):
+        invalid_classes = set()
+        for _class in self.classes:
+            try:
+                test_individual = _class()
+                owl.destroy_entity(test_individual)
+            except AttributeError:
+                invalid_classes.add(_class)
+        self._reset_ontology()
+        return invalid_classes
+
     def _get_property_domains_and_ranges(self):
         filled_properties = list()
         for _property in self.ontology.object_properties():
             domains, ranges = self.get_recurrent_domain_and_range(_property, [], [])
             filled_properties.append((_property, domains, ranges))
         return filled_properties
-
-    def _get_property_maps(self):
-        filled_properties = self._get_property_domains_and_ranges()
-        domain_property_map = defaultdict(list)
-        property_range_map = defaultdict(list)
-        for _property, domains, ranges in filled_properties:
-            for domain in domains:
-                domain_property_map[domain].append(_property)
-            for _range in ranges:
-                property_range_map[_property].append(_range)
-        return domain_property_map, property_range_map
-
-    def get_property_domain_range_map(self):
-        filled_properties = self._get_property_domains_and_ranges()
-        return {
-            _property: (domains, ranges)
-            for _property, domains, ranges in filled_properties
-        }
 
     def get_recurrent_domain_and_range(self, entity, domain, _range):
         if len(domain) == 0:
@@ -150,6 +137,44 @@ class WorldGenerator(ABC):
                 return self.get_recurrent_domain_and_range(parents[0], domain, _range)
             else:
                 return domain, _range
+
+    def _get_subclasses(self, classes):
+        recursive_subclasses = set(classes) - {None}
+        for _class in classes:
+            if _class is None:
+                continue
+            for subclass in _class.subclasses():
+                if subclass != _class:
+                    recursive_subclasses = recursive_subclasses.union(self._get_subclasses([subclass]))
+        return list(recursive_subclasses)
+
+    def _get_property_maps(self):
+        property_domain_range_map = dict()
+        domain_property_map = dict()
+        range_property_map = dict()
+        for _property in self.ontology.object_properties():
+            domains, ranges = self.get_recurrent_domain_and_range(_property, [], [])
+            full_domain = self._get_subclasses(domains)
+            full_range = self._get_subclasses(ranges)
+            valid_domain = [_class for _class in full_domain if _class not in self.invalid_classes]
+            valid_range = [_class for _class in full_range if _class not in self.invalid_classes]
+            if len(valid_domain) > 0 and len(valid_range) > 0:
+                property_domain_range_map[_property] = (valid_domain, valid_range)
+                for domain_class in valid_domain:
+                    if domain_class not in domain_property_map:
+                        domain_property_map[domain_class] = list()
+                    domain_property_map[domain_class].append(_property)
+                for range_class in valid_range:
+                    if range_class not in range_property_map:
+                        range_property_map[range_class] = list()
+                    range_property_map[range_class].append(_property)
+        return property_domain_range_map, domain_property_map, range_property_map
+
+    def _get_valid_properties(self):
+        return list(self.property_domain_range_map.keys())
+
+    def _get_valid_classes(self):
+        return list(set(self.domain_property_map.keys()).union(self.range_property_map.keys()))
 
     @abstractmethod
     def generate_world(self):
@@ -184,8 +209,6 @@ class WorldGenerator(ABC):
 
     def run_inference(self):
         with self.ontology:
-            for triplet in self._get_triplets():
-                print((triplet.subject, triplet._property, triplet._object))
             # owl.sync_reasoner_pellet(infer_property_values=True)
             owl.sync_reasoner(infer_property_values=True, debug = False)
             # try:
@@ -195,126 +218,16 @@ class WorldGenerator(ABC):
         inferred_triplets = self._get_triplets()
         return inferred_triplets
 
+class IncrementalGenerator(WorldGenerator):
+    def __init__(self, ontology_path: str, num_triplets: int, new_graph_prob: float, extend_graph_prob: float, add_edge_prob: float):
+        super(IncrementalGenerator, self).__init__(ontology_path)
+        self.actions = ['new_graph', 'extend_graph', 'add_edge']
+        self.num_triplets = num_triplets
+        self.action_probability_distribution = [new_graph_prob, extend_graph_prob, add_edge_prob]
 
-class SubjectBasedGenerator(WorldGenerator):
-    def generate_world(self, num_subjects, num_properties):
-        subjects = [self.generate_subject() for _ in range(num_subjects)]
-        for _ in range(num_properties):
-            self.ascribe_property(subjects)
-
-    def generate_subject(self):
-        _class = random.choice(self.classes)
-        return _class()
-
-    def generate_property(self, subject):
-        valiable_properties = self.domain_property_map[subject]
-        if len(valiable_properties) == 0:
-            return None
-        return random.choice(valiable_properties)
-
-    def generate_object(self, _property):
-        valiable_ranges = self.property_range_map[subject]
-        if len(valiable_ranges) == 0:
-            return None
-        _range = random.choice(valiable_ranges)
-        valiable_objects = list(self.ontology.get_instances_of(_range))
-        if len(valiable_objects) == 0:
-            return None
-        return random.choice(valiable_objects)
-
-    def ascribe_property(self, individuals):
-        _object = None
-        while _object == None:
-            subject = random.choice(individuals)
-            _property = self.generate_property(subject)
-            if _property is None:
-                continue
-            _object = self.generate_object(_property)
-        try:
-            setattr(subject, _property.name, _object)
-        except:
-            setattr(subject, _property.name, [_object])
-
-
-class PropertyBasedGenerator(WorldGenerator):
-    def _generate_property(self):
-        while True:
-            _property = random.choice(self.properties)
-            domains, ranges = self.property_domain_range_map[_property]
-            if len(domains) == 0 or len(ranges) == 0:
-                continue
-
-            # valiable_subjects = list(self.ontology.get_instances_of(domains[0]))
-            # if len(valiable_subjects) > 0:
-            #     subject = random.choice(valiable_subjects)
-            # else:
-            valiable_subject_classes = get_subclasses(domains[0])
-            subject = None
-            for _ in range(10):
-                subject_class = random.choice(valiable_subject_classes)
-                try:
-                    subject = subject_class()
-                except:
-                    pass
-                if subject is not None:
-                    break
-
-            # valiable_objects = [i for i in self.ontology.get_instances_of(ranges[0]) if i != subject]
-            # if len(valiable_objects) > 0:
-            #     _object = random.choice(valiable_objects)
-            # else:
-            valiable_object_classes = get_subclasses(ranges[0])
-            _object = None
-            for _ in range(10):
-                object_class = random.choice(valiable_object_classes)
-                try:
-                    _object = object_class()
-                except:
-                    pass
-                if _object is not None:
-                    break
-            if subject is None or _object is None:
-                continue
-
-            triplet = Triplet(subject, _property, _object)
-            triplet.add_object(_object)
-            return triplet
-
-    def modify_triplets(self, inferred_triplets):
-        triplets = list()
-        for triplet in inferred_triplets:
-            _property = triplet._property
-            domains, ranges = self.property_domain_range_map[_property]
-            if (len(domains) == 0 or len(ranges) == 0) or random.random() > 0.5:
-                triplets.append(triplet)
-                continue
-
-            valiable_subjects = [
-                i
-                for i in self.ontology.get_instances_of(domains[0])
-                if i != triplet.subject
-            ]
-            if len(valiable_subjects) > 0:
-                subject = random.choice(valiable_subjects)
-            else:
-                subject = domains[0]()
-
-            valiable_objects = [
-                i for i in self.ontology.get_instances_of(ranges[0]) if i != subject
-            ]
-            if len(valiable_objects) > 0:
-                _object = random.choice(valiable_objects)
-            else:
-                _object = ranges[0]()
-
-            modyfied_triplet = Triplet(subject, _property, _object)
-            modyfied_triplet.add_object(_object)
-            triplets.append(modyfied_triplet)
-        return triplets
-
-    def generate_world(self, num_properties):
+    def generate_world(self):
         self._reset_ontology()
-        initial_triplets = [self._generate_property() for _ in range(num_properties)]
+        initial_triplets = self._generate_premises()
         post_inference_triplets = self.run_inference()
         parsed_initial_triplets = self.parse_world(initial_triplets)
         inferred_triplets = (
@@ -323,6 +236,108 @@ class PropertyBasedGenerator(WorldGenerator):
         for triplet in post_inference_triplets:
             triplet.delete(self.initial_individuals)
         return parsed_initial_triplets, inferred_triplets
+
+    def _generate_premises(self):
+        individuals, triplets = self.create_new_graph(set(), dict())
+        num_actions = self.num_triplets - 1
+        actions = np.random.choice(self.actions, num_actions, p=self.action_probability_distribution)
+        for action in actions:
+            if action == 'new_graph':
+                individuals, triplets = self.create_new_graph(individuals, triplets)
+            elif action == 'extend_graph':
+                individuals, triplets = self.extend_graph(individuals, triplets)
+            elif action == 'add_edge':
+                individuals, triplets = self.add_edge(individuals, triplets)
+            else:
+                raise
+        return {triplet for key, triplet in triplets.items()}
+
+
+    def create_new_graph(self, individuals, triplets):
+        predicate = random.choice(list(self.property_domain_range_map.keys()))
+        domain, _range = self.property_domain_range_map[predicate]
+        subject_class = random.choice(domain)
+        object_class = random.choice(_range)
+        subject = subject_class()
+        _object = object_class()
+        subject = subject_class()
+        triplet = Triplet(subject, predicate, _object)
+        triplet.add_object(_object)
+        individuals = individuals.union({subject, _object})
+        triplets[(subject, predicate)] = triplet
+        return individuals, triplets
+
+    def extend_graph(self, individuals, triplets):
+        node_to_extend = random.sample(individuals, 1)[0]
+        existing_node_role = random.choice(["subject", "object"])
+        existing_node_class = type(node_to_extend)
+        if existing_node_role == "subject" and existing_node_class in self.domain_property_map:
+            predicates = list(self.domain_property_map[existing_node_class])
+            shuffled_predicates = random.sample(predicates, len(predicates))
+            for predicate in shuffled_predicates:
+                if (node_to_extend, predicate) in triplets:
+                    triplet = triplets[(node_to_extend, predicate)]
+                    if triplet.property_is_functional():
+                        continue
+                    else:
+                        _, _range = self.property_domain_range_map[predicate]
+                        object_class = random.choice(_range)
+                        _object = object_class()
+                        triplet.add_object(_object)
+                        individuals = individuals.union({_object})
+                        return individuals, triplets
+                else:
+                    _, _range = self.property_domain_range_map[predicate]
+                    object_class = random.choice(_range)
+                    _object = object_class()
+                    triplet = Triplet(node_to_extend, predicate, _object)
+                    triplet.add_object(_object)
+                    individuals = individuals.union({_object})
+                    triplets[(node_to_extend, predicate)] = triplet
+                    return individuals, triplets
+            return individuals, triplets
+        elif existing_node_class in self.range_property_map:
+            predicate = random.choice(list(self.range_property_map[existing_node_class]))
+            domain, _ = self.property_domain_range_map[predicate]
+            subject_class = random.choice(domain)
+            subject = subject_class()
+            triplet = Triplet(subject, predicate, node_to_extend)
+            triplet.add_object(node_to_extend)
+            individuals = individuals.union({subject})
+            triplets[(subject, predicate)] = triplet
+            return individuals, triplets
+        else:
+            return individuals, triplets
+
+    def add_edge(self, individuals, triplets):
+        shuffled_individuals = random.sample(individuals, len(individuals))
+        for candidate_subject in shuffled_individuals:
+            subject_class = type(candidate_subject)
+            if subject_class not in self.domain_property_map:
+                continue
+            predicates = self.domain_property_map[subject_class]
+            shuffled_predicates = random.sample(predicates, len(predicates))
+            candidate_objects =  random.sample(individuals - {candidate_subject}, len(individuals - {candidate_subject}))
+            for predicate in shuffled_predicates:
+                _, _range = self.property_domain_range_map[predicate]
+                for candidate_object in candidate_objects:
+                    if type(candidate_object) in _range:
+                        if (candidate_subject, predicate) in triplets:
+                            triplet = triplets[(candidate_subject, predicate)]
+                            if triplet.property_is_functional():
+                                continue
+                            else:
+                                if candidate_object in triplet._object:
+                                    continue
+                                else:
+                                    triplet.add_object(candidate_object)
+                                    return individuals, triplets
+                        else:
+                            triplet = Triplet(candidate_subject, predicate, candidate_object)
+                            triplet.add_object(candidate_object)
+                            triplets[(candidate_subject, predicate)] = triplet
+                            return individuals, triplets
+        return individuals, triplets
 
 
 def convert_to_json(worlds):
