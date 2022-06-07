@@ -3,6 +3,7 @@ from collections import defaultdict
 import random
 import re
 
+import numpy as np
 import owlready2 as owl
 
 
