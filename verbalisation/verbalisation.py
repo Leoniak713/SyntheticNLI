@@ -25,7 +25,8 @@ class VerbalisationTriplet:
         self.object = clean_entity(triplet['object'][1])
     
     def contains_verb(self, predicate):
-        return self.verblike_pos_tags in {pos_tag['entity'] for pos_tag in self.pos_tagger(predicate)}
+        pos_tags = {pos_tag['entity'] for pos_tag in self.pos_tagger(predicate)}
+        return len(pos_tags.intersection(self.verblike_pos_tags)) > 0
     
     def get_masked_statement(self, negate=False, prefix_entities=True):
         #masked sentence in form [SOS, subject prefix, subject, predicate prefix, predicate, object prefix, object, EOS]
