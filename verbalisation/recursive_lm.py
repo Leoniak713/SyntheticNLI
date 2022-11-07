@@ -14,8 +14,8 @@ class POSConstraint:
         self.pos_tagger = pos_tagger
         self.verblike_pos_tags = {'VERB', 'AUX'}
 
-    #@staticmethod
-    def is_fully_filled(self, pos_tags):
+    @staticmethod
+    def is_fully_filled(pos_tags):
         for pos_tag in pos_tags:
             if pos_tag['word'] == '[MASK]':
                 return False
@@ -35,14 +35,14 @@ class POSConstraint:
             for token_range in token_ranges[1:-1]:
                 verbalisation_part_decoded = self.tokenizer.decode(verbalisation_state['sentence_tokens'][0][token_range[0]:token_range[1]])
                 verbalised_sentence_parts.append(verbalisation_part_decoded.replace('<mask>', '[MASK]'))
-            verbalised_sentence = ''.join(verbalised_sentence_parts)
+            verbalised_sentence = ' '.join(verbalised_sentence_parts)
 
             subject_phrase_characters_start = 0
-            subject_phrase_characters_end = len(''.join(verbalised_sentence_parts[0:2]))
-            predicate_phrase_characters_start = len(''.join(verbalised_sentence_parts[0:2]))
-            predicate_phrase_characters_end = len(''.join(verbalised_sentence_parts[0:4]))
-            object_phrase_characters_start = len(''.join(verbalised_sentence_parts[0:4]))
-            object_phrase_characters_end = len(''.join(verbalised_sentence_parts[0:6]))
+            subject_phrase_characters_end = len(' '.join(verbalised_sentence_parts[0:2]))
+            predicate_phrase_characters_start = len(' '.join(verbalised_sentence_parts[0:2]))
+            predicate_phrase_characters_end = len(' '.join(verbalised_sentence_parts[0:4]))
+            object_phrase_characters_start = len(' '.join(verbalised_sentence_parts[0:4]))
+            object_phrase_characters_end = len(' '.join(verbalised_sentence_parts[0:6]))
             
             subject_phrase_pos_tags = list()
             predicate_phrase_pos_tags = list()

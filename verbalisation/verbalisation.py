@@ -13,6 +13,7 @@ class VerbalisationTriplet:
         self.indexed_object = triplet['object'][0]
         self.pos_tagger = pos_tagger
         self.tokenizer = tokenizer
+        self.mask_token = tokenizer.mask_token
         self.set_clean_triplet_elements(triplet)
         self.verblike_pos_tags = {'VERB', 'AUX'}
     
@@ -28,29 +29,31 @@ class VerbalisationTriplet:
         pos_tags = {pos_tag['entity'] for pos_tag in self.pos_tagger(predicate)}
         return len(pos_tags.intersection(self.verblike_pos_tags)) > 0
     
-    def get_masked_statement(self, negate=False, prefix_entities=True):
+    def get_masked_statement(self, mask_token=None, negate=False, prefix_entities=True):
+        if mask_token is None:
+            mask_token = self.mask_token
         #masked sentence in form [SOS, subject prefix, subject, predicate prefix, predicate, object prefix, object, EOS]
         masked_elements = list()
         masked_elements.append('<s>')
         if prefix_entities:
-            masked_elements.append(' <mask>')
+            masked_elements.append(mask_token)
         else:
             masked_elements.append('')
-        masked_elements.append(f" {self.subject}")
+        masked_elements.append(self.subject)
             
         # if negate:
         #     masked_elements.append(self.prefix_mask('not'))
-        if not self.contains_verb(clean_entity(f" {self.property}")):
-            masked_elements.append(' <mask>')
+        if not self.contains_verb(clean_entity(self.property)):
+            masked_elements.append(mask_token)
         else:
             masked_elements.append('')
-        masked_elements.append(f" {self.property}")
+        masked_elements.append(self.property)
             
         if prefix_entities:
-            masked_elements.append(' <mask>')
+            masked_elements.append(mask_token)
         else:
             masked_elements.append('')
-        masked_elements.append(f" {self.object}")
+        masked_elements.append(self.object)
         masked_elements.append('.</s>')
         
         return masked_elements
@@ -58,14 +61,22 @@ class VerbalisationTriplet:
     def mask_individuals(self, sentence, use_single_mask=True):
         masked_sentence = sentence.copy()
         if use_single_mask:
-            masked_sentence[2] = '<mask>'
-            masked_sentence[6] = '<mask>'
+            masked_sentence[2] = self.mask_token
+            masked_sentence[6] = self.mask_token
         else:
             num_subject_tokens = self.tokenizer.encode(sentence[2], return_tensors="pt", add_special_tokens=False).shape[1]
             num_object_tokens = self.tokenizer.encode(sentence[6], return_tensors="pt", add_special_tokens=False).shape[1]
-            masked_sentence[2] = ' '.join(['<mask>']*num_subject_tokens)
-            masked_sentence[6] = ' '.join(['<mask>']*num_object_tokens)
+            masked_sentence[2] = ' '.join([self.mask_token]*num_subject_tokens)
+            masked_sentence[6] = ' '.join([self.mask_token]*num_object_tokens)
         return masked_sentence
+    
+    def get_statement_for_verb_detection(self, negate=False, prefix_entities=True):
+        masked_statement = self.get_masked_statement(self.pos_tagger.tokenizer.mask_token, negate, prefix_entities)[1:-1]
+        masked_statement[3] = ''
+        predicate_phrase_start_id = len(' '.join(masked_statement[:3]))
+        predicate_phrase_end_id = len(' '.join(masked_statement[:5]))
+        phrase_range_ids = {'start': predicate_phrase_start_id, 'end': predicate_phrase_end_id}
+        return masked_statement, phrase_range_ids
 
 class HypothesisTriplet:
     def __init__(self, triplet, pos_tagger, tokenizer):
